@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+
+<body>
+    <canvas id="myCanvas" style="border:none #d3d3d3;"></canvas>
+    <!--
+    // use this to do scrolling via only showing a part of full canvas -> probably better to do it with redrawing (fast enough?)
+    <div style="max-width:1200px;overflow: scroll;">
+        <canvas id="myCanvas" style="border:none #d3d3d3;"></canvas>
+    </div>
+    -->
+</body>
+
+<script>
+    // draft project class
+    class Project {
+        constructor(proj_nr, amp_i, start, stop, status) {
+            this.proj_nr = proj_nr;
+            this.amp_i = amp_i;
+            this.start = start;
+            this.stop = stop;
+            this.status = status;
+        }
+    }
+
+    // dummy test data
+    var pro1 = new Project(20200021, "Stefano", "16.03.2020", "20.03.2020", "open");
+    var pro2 = new Project(20200230, "Michel", "13.03.2020", "19.03.2020", "open");
+    var pro3 = new Project(20200236, "Rafi", "14.03.2020", "18.03.2020", "open");
+    var pros = [pro1, pro2, pro3];
+
+    // test data access
+    /*
+    for (p in pros) {
+        console.log(pros[p].amp_i);
+    }
+    */
+
+    // prep date
+    // extend class with diff nr of days
+    Date.prototype.addDays = function (days) {
+        var date = new Date(this.valueOf());
+        date.setDate(date.getDate() + days);
+        return date;
+    }
+    var date = new Date();
+    // func to get standard format for date
+    function formatDate(date) {
+        // get month and day number of "date" (date is of Class Date and has no specific format)
+        var month = date.getMonth() + 1, day = date.getDate();
+        // if month is single digit add "0" at beginning so that all dates have same length
+        var month_str = (month > 9) ? month.toString() : "0" + month.toString();
+        // if day is single digit add "0" at beginning so that all dates have same length
+        var day_str = (day > 9) ? day.toString() : "0" + day.toString();
+        return day_str + "." + month_str;
+    }
+
+
+    // extend canvas context to draw rounded rectangles
+    CanvasRenderingContext2D.prototype.roundedRect = function (x, y, width, height, radius) {
+        // Because the function is added to the context prototype
+        // the 'this' variable is actually the context
+
+        // Save the existing state of the canvas so that it can be restored later
+        this.save();
+
+        // Translate to the given X/Y coordinates
+        this.translate(x, y);
+
+        // Move to the center of the top horizontal line
+        this.moveTo(width / 2, 0);
+
+        // Draw the rounded corners. The connecting lines in between them are drawn automatically
+        this.arcTo(width, 0, width, height, Math.min(height / 2, radius));
+        this.arcTo(width, height, 0, height, Math.min(width / 2, radius));
+        this.arcTo(0, height, 0, 0, Math.min(height / 2, radius));
+        this.arcTo(0, 0, radius, 0, Math.min(width / 2, radius));
+
+        // Draw a line back to the start coordinates
+        this.lineTo(width / 2, 0);
+
+        // Restore the state of the canvas to as it was before the save
+        this.restore();
+    }
+
+    // start canvas handling
+    // get canvas objects
+    var c = document.getElementById("myCanvas");
+    var ctx = c.getContext("2d");
+
+    // size and split params have to be knwon outside as well for data drawing
+    var v_split_center;
+    var nr_v_splits;
+    var delta_v;
+    var nr_h_splits;
+    var delta_h;
+    var header_padding_size = 20;
+    var header_keys = [];
+    var header_dates = [];
+    // edges of header range to compare to
+    var low_border;
+    var high_border;
+
+    // get today to compare with dates that are written on top
+    // later: if column = today, shade it
+    var today = new Date();
+    var today_str = formatDate(today);
+
+    // draw pare canvas
+    function drawCanvas() {
+        c.width = window.innerWidth * 0.8;
+        c.height = 500;
+        // params for vertical line
+        nr_v_splits = 30;
+        v_split_center = nr_v_splits / 2;
+        delta_v = c.width / nr_v_splits;
+        // change ctx settings for vertical lines
+        ctx.font = "10px Verdana";
+        ctx.strokeStyle = "#a3a3a3";
+        ctx.setLineDash([10, 3]);
+        ctx.lineWidth = 1;
+        header_keys = [];
+        header_dates = [];
+
+        // draw vertical lines
+        for (var d = 0; d <= nr_v_splits; d++) {
+            ctx.beginPath();
+            // define current text label
+            const c_date = date.addDays(d - v_split_center);
+            let label = formatDate(c_date);
+            header_keys.push(label);
+            header_dates.push(c_date);
+            // write date: start from currently set 'center date' "var date", add or remove #days from there
+            ctx.fillText(label, (d - 0.85) * delta_v, 16);
+            ctx.moveTo(d * delta_v, header_padding_size);
+            ctx.lineTo(d * delta_v, c.height);
+            ctx.stroke();
+            // if column = today, shade it
+            // get date in same format of currently written date
+            var cur_date_str = formatDate(date.addDays(d - v_split_center));
+
+            // if currently written date equals today -> shade it!
+            if (today_str == cur_date_str) {
+                // set shade color
+                ctx.fillStyle = "#f77e7e";
+                // draw rect: params: (start hor, start vert, width, height)
+                ctx.fillRect((d - 1) * delta_v, header_padding_size, delta_v, c.height);
+                // reset color for following dates to write (fillText)
+                ctx.fillStyle = "#000000";
+            }
+        }
+
+        // get edges to compare
+        low_border = header_keys[0];
+        high_border = header_keys[header_keys.length - 1];
+        // params for horizontal lines
+        nr_h_splits = 12; // eg nr of apm-i, nr of projcets
+        delta_h = (c.height - header_padding_size) / nr_h_splits;
+        ctx.strokeStyle = "#000";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([1, 0]);
+
+        // draw horizontal lines
+        for (var d = 1; d <= nr_h_splits; d++) {
+            ctx.beginPath();
+            // ctx.fillText(formatDate(date.addDays(d - v_split_center)), (d - 0.85) * delta_v, 16);
+            ctx.moveTo(0, header_padding_size + d * delta_h);
+            ctx.lineTo(c.width, header_padding_size + d * delta_h);
+            ctx.stroke();
+        }
+
+        // now call data drawing function (updateded values of start date etc)
+        // drawDataOfCurrentRange();
+        drawRectWithWrapper("08.03.2020", "30.03.2020", 1, "green");
+        drawRectWithWrapper("12.03.2020", "22.03.2020", 2, "yellow");
+        drawRectWithWrapper("17.03.2020", "02.04.2020", 3, "blue");
+        drawRectWithWrapper("05.03.2020", "12.04.2020", 4, "red");
+        drawRectWithWrapper("01.03.2020", "06.03.2020", 5, "green");
+        /*
+        // Todo: handle fanishing of worm and overfloting on boardre (not done yet)
+        */
+    }
+
+    function drawRectWithWrapper(start_date, end_date, row, color) {
+        // first task: get from date formats which were provided to comparable date
+        // split date string to get individual numbers of day, month, year (in array)
+        const s_date_temp = start_date.split(".");
+        const e_date_temp = end_date.split(".");
+        // create new date out of numbers: new Date(year, month, day). Month goes from 0-11 in constructor --> -1.
+        const s_date = new Date(s_date_temp[2], s_date_temp[1] - 1, s_date_temp[0]);
+        const e_date = new Date(e_date_temp[2], e_date_temp[1] - 1, e_date_temp[0]);
+        // change Date type into format used as header keys
+        const start_key = formatDate(s_date);
+        const end_key = formatDate(e_date);
+        // get index of start_key in header list. This will be multiplied by vertical line spacing
+        let sta_col = header_keys.indexOf(start_key);
+        // get index of end_key in header list. This will be multiplied by horizontal line spacing
+        let end_col = header_keys.indexOf(end_key);
+        /*
+        // IDEA OF WHAT FOLLOWS
+        // indexOf retunrs -1 if element is not found.
+        // the key is then out of bounds on EITHER side of the displayed range
+        // there are 5 cases:
+        //      1) both keys (col) are within bounds -> no problem, draw rectangle
+        //      2) sta_col is out of bounds, end_col is within bounds -> rect overflows on LEFT boarder
+        //      3) sta_col is within bounds, end_col is out of bounds -> rect overflows on RIGHT boarder
+        //      4.1) both keys (cols) are out of bounds on OPPOSIT sides -> rect spans whole row
+        //      4.2) both keys (cols) are out of bounds on SAME sides -> no rectangle to be drawn
+        */
+        // define consts that are the same for all cases
+        const start_y = header_padding_size + row * delta_h + delta_h * 0.1; // start y (vertical axis)
+        const v_strech = delta_h * 0.8; // vertical strech (height)
+        const radius = 12;
+        let start_x;
+        let h_strech;
+        // CASE 1: both are in
+        if (sta_col > -1 && end_col > -1) {
+            start_x = (sta_col) * delta_v - delta_v * 0.5; // start x (horizontal axis)
+            h_strech = delta_v * (end_col - sta_col); // horizontal stretch (length)
+        };
+        // CASE 2: start is out, end is in
+        if (sta_col < 0 && end_col > -1) {
+            start_x = - delta_h * 0.5; // start x (horizontal axis)
+            h_strech = delta_v * (end_col); // horizontal stretch (length)
+        }
+        // CASE 3: start is in, end is out
+        if (sta_col > -1 && end_col < 0) {
+            start_x = (sta_col) * delta_v - delta_v * 0.5; // start x (horizontal axis)
+            h_strech = delta_v * (nr_v_splits + 1 - sta_col); // horizontal stretch (length)
+        }
+        // CASE 4.1 and 4.2
+        if (sta_col < 0 && end_col < 0) {
+            // 4.1 both on opposite sides...
+            // this is the case if start is lower then lower bound and end date higher than upper bound
+            if (s_date.getTime() < header_dates[0].getTime() && e_date.getTime() > header_dates[header_dates.length - 1].getTime()) {
+                start_x = - delta_h * 0.5; // start x (horizontal axis)
+                h_strech = c.width + delta_h; // horizontal stretch (length)
+            } else {
+                // 4.2 both are out on the same side --> draw nothing
+                return;
+            }
+        }
+        drawSingleRect(start_x, start_y, h_strech, v_strech, radius, color);
+    };
+
+    function drawSingleRect(start_x, start_y, length_x, height_y, border_radius, color) {
+        ctx.beginPath();
+        ctx.fillStyle = color;
+        ctx.roundedRect(start_x, start_y, length_x, height_y, border_radius);
+        ctx.stroke();
+        ctx.fill();
+    }
+
+    /*
+    // dummy scroll: click on canvas to scroll to right
+    c.addEventListener('click', function (evt) {
+        date = date.addDays(1)
+        drawCanvas();
+    });
+    */
+
+    // scroll left rigth with arrow keys
+    document.onkeydown = function (e) {
+        if (e.keyCode == 37) date = date.addDays(-1);
+        if (e.keyCode == 39) date = date.addDays(1);
+        drawCanvas();
+    }
+
+    // redraw canvas when window is resized
+    window.onresize = drawCanvas;
+    // draw canvas on document load, b/c just calling on resize won't draw it on first load
+    window.onload = drawCanvas;
+
+</script>
+
+<style>
+    body {
+        text-align: center;
+    }
+</style>
+
+</html>
